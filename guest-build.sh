@@ -1,6 +1,8 @@
 # guest-build.sh —— 在母版构建实例内执行（由 build-base.ps1 做占位符替换后经 base64 传入 stdin）
-# 目标：把官方 Ubuntu rootfs 对齐成「腾讯云全新 VPS」基线
-# 原则：新 VPS 没有的一律不加（git 等），VPS 自带的必须有（sshd/cloud-init/systemd），apt 源对齐腾讯云公网镜像
+# 目标：把官方 Ubuntu rootfs 对齐成「全新 VPS」基线；母版始终保持出厂官方源
+# 原则：新 VPS 没有的一律不加（git 等），VPS 自带的必须有（sshd/cloud-init/systemd）
+# apt 源：构建期用加速镜像装基线包（快），导出前还原出厂官方源；目标云的源对齐由沙箱
+#        启动期 setup.sh 按 profile 执行（母版每版本唯一，新增云厂商 = 纯配置，构建成本不翻倍）
 FAILS=0
 ok()  { printf 'BUILD-OK\t%s\t%s\n' "$1" "$2"; }
 bad() { FAILS=$((FAILS+1)); printf 'BUILD-FAIL\t%s\t%s\n' "$1" "$2"; }
@@ -9,13 +11,13 @@ ck()  { if eval "$2" >/dev/null 2>&1; then ok "$1" "$3"; else bad "$1" "$3"; fi;
 VER="@SB_VER@"
 MIRROR="@SB_MIRROR@"
 
-echo "=== 对齐目标: Ubuntu $VER → 腾讯云全新 VPS 基线 ==="
+echo "=== Ubuntu $VER 母版构建：新机基线（出厂官方源；构建期用镜像加速） ==="
 echo '=== stock /etc/wsl.conf ==='
 cat /etc/wsl.conf 2>/dev/null || echo '(不存在)'
 echo '=== stock apt 源 ==='
 cat /etc/apt/sources.list.d/ubuntu.sources 2>/dev/null || cat /etc/apt/sources.list 2>/dev/null || echo '(不存在)'
 
-echo '---[1] apt 源 → 腾讯云公网镜像（自动识别 deb822 / 传统 one-line 格式） ---'
+echo '---[1] apt 源：备份出厂官方源 → 构建期换加速镜像（自动识别 deb822 / 传统 one-line 格式） ---'
 DEB822=/etc/apt/sources.list.d/ubuntu.sources
 LEGACY=/etc/apt/sources.list
 if [ -f "$DEB822" ]; then
@@ -25,29 +27,32 @@ elif [ -f "$LEGACY" ]; then
   SRC=$LEGACY
   STYLE=legacy
 else
-  # rootfs 不带源文件：按 codename 生成传统格式（新 VPS 的兜底行为）
+  # rootfs 不带源文件：按 codename 生成官方源（这就是母版的出厂状态）
   . /etc/os-release
   SRC=$LEGACY
   STYLE=legacy-generated
   cat > "$LEGACY" <<EOF
-deb $MIRROR $VERSION_CODENAME main restricted universe multiverse
-deb $MIRROR $VERSION_CODENAME-updates main restricted universe multiverse
-deb $MIRROR $VERSION_CODENAME-backports main restricted universe multiverse
-deb $MIRROR $VERSION_CODENAME-security main restricted universe multiverse
+deb http://archive.ubuntu.com/ubuntu $VERSION_CODENAME main restricted universe multiverse
+deb http://archive.ubuntu.com/ubuntu $VERSION_CODENAME-updates main restricted universe multiverse
+deb http://archive.ubuntu.com/ubuntu $VERSION_CODENAME-backports main restricted universe multiverse
+deb http://security.ubuntu.com/ubuntu $VERSION_CODENAME-security main restricted universe multiverse
 EOF
 fi
+# 备份出厂源到 /root/（绝不能放 sources.list.d/ —— apt 会把备份当第二个源文件解析）
+STOCKBAK=/root/.sb-stock-sources
+cp -a "$SRC" "$STOCKBAK"
 sed -i \
   -e "s|https\?://archive.ubuntu.com/ubuntu/*|$MIRROR|g" \
   -e "s|https\?://security.ubuntu.com/ubuntu/*|$MIRROR|g" \
   "$SRC"
-ck 'apt源' "grep -Fq '$MIRROR' $SRC" "apt 源 → $MIRROR（$STYLE）"
+ck 'apt源(构建期)' "grep -Fq '$MIRROR' $SRC" "构建期 apt 源 → $MIRROR（$STYLE，仅加速，不进母版）"
 echo '--- 生效的源（节选） ---'
 grep -E '^(Types|URIs|Suites|Components|deb) ' "$SRC" 2>/dev/null | head -10
 
 echo '---[2] apt-get update（实测镜像在构建网络内可达） ---'
 AU=$(apt-get update 2>&1); ARC=$?
 echo "$AU" | tail -8
-if [ $ARC -eq 0 ]; then ok 'apt update' '腾讯云镜像可用'
+if [ $ARC -eq 0 ]; then ok 'apt update' '构建期镜像可用'
 else bad 'apt update' '失败——镜像不可达，构建中止'; echo "BUILD-DONE FAILS=$FAILS"; exit $FAILS; fi
 
 echo '---[3] VPS 基线包（sshd/cloud-init 是新机自带，git 等一律不装） ---'
@@ -119,7 +124,17 @@ for d in /mnt/*; do
 done
 ck '/mnt 无宿主盘挂载点' '! ls -A /mnt 2>/dev/null | grep -vE "^(wsl|wslg)$" | grep -q .' '母版不含任何 /mnt/<盘符> 目录'
 
-echo '---[6] cloud-init 首启重置 + 恢复出厂状态 ---'
+echo '---[6] 还原出厂官方源（母版不携带任何云镜像；对齐由沙箱启动期按 profile 执行） ---'
+if [ -f "$STOCKBAK" ]; then
+  mv -f "$STOCKBAK" "$SRC"
+  ck '母版出厂源' "grep -Eq 'archive.ubuntu.com|security.ubuntu.com' $SRC && ! grep -Fq '$MIRROR' $SRC" "母版保持官方源（加速镜像已还原）"
+else
+  bad '母版出厂源' "备份 $STOCKBAK 缺失（不应发生）"
+fi
+echo '--- 出厂源（节选） ---'
+grep -E '^(Types|URIs|Suites|Components|deb) ' "$SRC" 2>/dev/null | head -10
+
+echo '---[7] cloud-init 首启重置 + 恢复出厂状态 ---'
 if command -v cloud-init >/dev/null 2>&1; then
   OUT=$(cloud-init clean --logs 2>&1); RC=$?
   echo "$OUT"
@@ -130,11 +145,11 @@ apt-get clean 2>/dev/null
 rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/* 2>/dev/null
 ck 'apt 出厂状态' '! ls /var/lib/apt/lists/* >/dev/null 2>&1' '包列表已清空（用户首启须 apt update，与新机一致）'
 
-echo '---[7] 基线自检（证据留档） ---'
+echo '---[8] 基线自检（证据留档） ---'
 echo "SB_VER=$VER"
 echo "whoami=$(whoami) uid=$(id -u)"
 echo "python3=$(command -v python3 || echo 缺失) curl=$(command -v curl || echo 无) wget=$(command -v wget || echo 无) git=$(command -v git || echo 无)"
 dpkg -l openssh-server cloud-init 2>/dev/null | awk '/^ii/{print "已装: "$2" "$3}'
-echo "apt 源: $(grep -h -E '^(URIs:|deb )' $SRC 2>/dev/null | head -2)"
+echo "母版出厂源: $(grep -h -E '^(URIs:|deb )' $SRC 2>/dev/null | head -2)"
 echo "BUILD-DONE FAILS=$FAILS"
 exit $FAILS

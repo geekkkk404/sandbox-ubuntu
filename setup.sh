@@ -1,4 +1,5 @@
 # setup.sh —— 沙箱 guest 内执行（由 start-sandbox.ps1 经 base64 送入 stdin）
+# 输入: SB_PROFILE（新机档案 id）/ SB_ALIGN（1=启动期把 apt 源对齐到 SB_MIRROR，0=保持官方源）/ SB_MIRROR（档案的源，也用于可达性检查）/ GHTOKEN（可选）
 # 输出协议: PASS\t名称\t详情 | FAIL\t名称\t详情 | INFO\t详情 | STATUS\tOK/FAIL\t失败数
 # 铁律: token 绝不打印到任何输出；没有 token = 纯净模式（合法路径，不是错误）
 FAILED=0
@@ -21,18 +22,50 @@ STRAY=$(ls -A /mnt 2>/dev/null | grep -vE '^(wsl|wslg)$' | head -1)
 if [ -n "$STRAY" ]; then step FAIL '隔离(盘符)' "/mnt 下发现宿主盘挂载点: $STRAY"; else info '宿主盘不可见 —— 隔离生效'; fi
 if command -v cmd.exe >/dev/null 2>&1; then step FAIL '隔离(interop)' '可调用 Windows exe——interop 未生效'; else info '无法调用 Windows exe —— interop 已关闭'; fi
 
-# ---- 网络：apt 镜像可达（真实 VPS 的第一件事就是 apt 源可用） ----
+# ---- 新机档案（profile）：启动期把 apt 源对齐到目标云 ----
+# 母版始终是出厂官方源；对齐只发生在本次实例内，随销毁消失。云内网域名不可达，一律对齐到等价公网镜像。
+PROFILE="${SB_PROFILE:-}"
+ALIGN="${SB_ALIGN:-0}"
 MIRROR="${SB_MIRROR:-}"
+if [ -z "$PROFILE" ]; then step FAIL '新机档案' 'SB_PROFILE 未传入'; finish 1; fi
 if [ -z "$MIRROR" ]; then step FAIL '镜像地址' 'SB_MIRROR 未传入'; finish 1; fi
+SRC=/etc/apt/sources.list.d/ubuntu.sources
+[ -f "$SRC" ] || SRC=/etc/apt/sources.list
+if [ ! -f "$SRC" ]; then step FAIL 'apt 源文件' '母版内不存在任何 apt 源文件'; finish 1; fi
+if [ "$ALIGN" = "1" ]; then
+  sed -i \
+    -e "s|https\?://archive.ubuntu.com/ubuntu/*|$MIRROR|g" \
+    -e "s|https\?://security.ubuntu.com/ubuntu/*|$MIRROR|g" \
+    "$SRC"
+  if grep -Fq "$MIRROR" "$SRC"; then
+    step OK '源对齐' "apt 源 → $MIRROR（profile=$PROFILE，启动期对齐，仅本次实例）"
+  else
+    step FAIL '源对齐' "改写后未见目标镜像: $MIRROR（源文件格式异常？）"
+  fi
+else
+  if grep -Eq 'archive\.ubuntu\.com|security\.ubuntu\.com' "$SRC"; then
+    step OK '源对齐' "apt 源保持官方 archive.ubuntu.com（profile=$PROFILE，GCP/AWS/Azure 新机即官方源）"
+  else
+    step FAIL '源对齐' "profile=$PROFILE 但源非官方——母版是旧版构建，请重建: build-base.ps1 -Version <id> -Force"
+  fi
+fi
+
+# ---- 网络：目标源可达（真实 VPS 的第一件事就是 apt 源可用） ----
+# 冷启动实例的 DNS 有预热期（WSL NAT 链路实测：首查可慢至 7~20s，甚至当场拒绝一次后立即恢复），
+# 单次检查会误判，故带退避重试 3 次；真断网时 ~66s 内仍给出红色 FAIL
 if python3 - "$MIRROR" <<'PYEOF'
-import sys, urllib.request
-try:
-    urllib.request.urlopen(sys.argv[1], timeout=15).read(64)
-except Exception:
-    sys.exit(1)
+import sys, time, urllib.request
+for attempt in range(3):
+    try:
+        urllib.request.urlopen(sys.argv[1], timeout=20).read(64)
+        sys.exit(0)
+    except Exception:
+        if attempt < 2:
+            time.sleep(3)
+sys.exit(1)
 PYEOF
 then step OK 'apt 镜像' "$MIRROR 可达（首启 apt update 的前提）"
-else step FAIL 'apt 镜像' "不可达: $MIRROR（宿主网络/代理问题？）"; finish 1
+else step FAIL 'apt 镜像' "重试 3 次仍不可达: $MIRROR（宿主网络/代理问题？）"; finish 1
 fi
 
 # ---- 身份模式：注入 + GitHub 三段验证（纯净模式整段跳过） ----

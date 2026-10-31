@@ -1,11 +1,13 @@
-﻿# start-sandbox.ps1 —— 主入口：选版本→(按需构建母版)→清理→导入全新实例→(可选身份)+验证→进入shell→退出即校验式销毁
+﻿# start-sandbox.ps1 —— 主入口：选版本/档案→(按需构建母版)→清理→导入全新实例→(可选身份)+验证→进入shell→退出即校验式销毁
 # 参数: -Version 22.04|24.04|26.04  指定版本（缺省：交互菜单；自动化场景用上次选择或 versions.json 的 default）
+#       -Profile stock|tencent|aliyun  指定新机档案（apt 源启动期对齐到目标云；缺省：菜单/上次选择/defaultProfile）
 #       -SkipShell   不开交互 shell，跑完 注入/验证/清理（自动化验证用；无人值守时自动构建缺失的母版）
 #       -Force       验证失败时不询问直接放弃
 #       -NoIdentity  强制纯净模式（即使 token.txt 存在也不注入）
-#       -ListVersions 打印支持矩阵后退出
+#       -ListVersions 打印支持矩阵（版本 × 新机档案）后退出
 param(
     [string]$Version,
+    [string]$Profile,
     [switch]$SkipShell,
     [switch]$Force,
     [switch]$NoIdentity,
@@ -83,6 +85,39 @@ function Select-VersionMenu([object]$Manifest) {
     }
     return $chosen
 }
+function Get-LastProfile([object]$Manifest) {
+    $stateFile = Join-Path $LogDir 'last-profile.txt'
+    $defaultProfile = $Manifest.defaultProfile
+    if (-not $defaultProfile) { $defaultProfile = @($Manifest.profiles)[0].id }
+    if (Test-Path $stateFile) {
+        $last = (Get-Content -LiteralPath $stateFile -Encoding UTF8 | Select-Object -First 1)
+        if ($last) { $last = $last.Trim() }
+        $ids = @($Manifest.profiles | ForEach-Object { $_.id })
+        if ($last -and ($ids -contains $last)) { return $last }
+    }
+    return $defaultProfile
+}
+function Select-ProfileMenu([object]$Manifest) {
+    $ids = @($Manifest.profiles | ForEach-Object { $_.id })
+    $default = Get-LastProfile $Manifest
+    Write-Host ''
+    Write-Host '选择新机档案（apt 源在启动期对齐到目标云的等价公网源）:' -ForegroundColor Cyan
+    for ($i = 0; $i -lt $ids.Count; $i++) {
+        $e = @($Manifest.profiles | Where-Object { $_.id -eq $ids[$i] })[0]
+        if ($ids[$i] -eq $default) {
+            Write-Host ("  [{0}] {1,-8} {2}   ← 上次使用，回车默认" -f ($i + 1), $e.id, $e.name) -ForegroundColor Green
+        } else {
+            Write-Host ("  [{0}] {1,-8} {2}" -f ($i + 1), $e.id, $e.name) -ForegroundColor Gray
+        }
+    }
+    $ans = Read-Host ("输入序号（回车 = {0}）" -f $default)
+    $chosen = $default
+    if ($ans -match '^\d+$') {
+        $idx = [int]$ans - 1
+        if ($idx -ge 0 -and $idx -lt $ids.Count) { $chosen = $ids[$idx] }
+    }
+    return $chosen
+}
 function Ensure-BaseTar([string]$Id, [object]$Manifest) {
     $baseTar = Join-Path $Root ('base\base-{0}.tar' -f $Id)
     if (-not (Test-Path $baseTar)) {
@@ -135,6 +170,14 @@ if ($ListVersions) {
         if ($e.id -eq $Manifest.default) { $mark = "$mark  [默认]" }
         Write-Host ("  {0,-6} {1}{2}" -f $e.id, $e.name, $mark)
     }
+    Write-Host ''
+    Write-Host '新机档案（profile，apt 源在启动期对齐到目标云的等价公网源）:' -ForegroundColor Cyan
+    $defProf = Get-LastProfile $Manifest
+    foreach ($p in $Manifest.profiles) {
+        $mark = ''
+        if ($p.id -eq $defProf) { $mark = '  [默认]' }
+        Write-Host ("  {0,-8} {1,-6} {2}{3}" -f $p.id, $p.mirror, $p.name, $mark)
+    }
     exit 0
 }
 
@@ -160,6 +203,22 @@ if ($Version) {
 }
 New-Item -ItemType Directory -Force -Path $LogDir | Out-Null
 [IO.File]::WriteAllText((Join-Path $LogDir 'last-version.txt'), $Version, (New-Object System.Text.UTF8Encoding($false)))
+
+# ---- 档案（profile）选择：目标云基线，apt 源在启动期对齐（母版始终出厂官方源） ----
+$profIds = @($Manifest.profiles | ForEach-Object { $_.id })
+if ($Profile) {
+    if ($profIds -notcontains $Profile) {
+        Write-Host "[FAIL] 不支持的新机档案 '$Profile'。可用: $($profIds -join ', ')（或运行 -ListVersions 查看）" -ForegroundColor Red
+        PauseAtEnd; exit 1
+    }
+} elseif ($SkipShell) {
+    $Profile = Get-LastProfile $Manifest
+} else {
+    $Profile = Select-ProfileMenu $Manifest
+}
+$Prof = @($Manifest.profiles | Where-Object { $_.id -eq $Profile })[0]
+[IO.File]::WriteAllText((Join-Path $LogDir 'last-profile.txt'), $Profile, (New-Object System.Text.UTF8Encoding($false)))
+Write-Host ('新机档案: {0}（apt 源启动期对齐 → {1}）' -f $Prof.id, $Prof.mirror) -ForegroundColor DarkCyan
 
 Write-Host '[1/6] 环境检查...（WSL OK）'
 
@@ -208,12 +267,14 @@ if (-not $useIdentity) {
 }
 
 Write-Host '[5/6] 初始化 + 验证...'
-$env:SB_MIRROR = $Manifest.mirror
+$env:SB_MIRROR = $Prof.mirror
+$env:SB_PROFILE = $Prof.id
+$env:SB_ALIGN = @('0', '1')[[int][bool]$Prof.alignSources]
 if ($useIdentity) {
     $env:GHTOKEN = $token
-    $env:WSLENV = 'SB_MIRROR/u:GHTOKEN/u'
+    $env:WSLENV = 'SB_MIRROR/u:SB_PROFILE/u:SB_ALIGN/u:GHTOKEN/u'
 } else {
-    $env:WSLENV = 'SB_MIRROR/u'
+    $env:WSLENV = 'SB_MIRROR/u:SB_PROFILE/u:SB_ALIGN/u'
 }
 $token = ''
 
@@ -236,7 +297,7 @@ $st = @($strOut | Where-Object { $_ -like 'STATUS*' })
 if ($st.Count -gt 0 -and $st[-1] -like "STATUS`tOK*") { $status = 'OK' }
 $modeLine = 'pure'
 if ($useIdentity) { $modeLine = 'identity' }
-$resultLines = @(("status=$status"), ("version=$Version"), ("mode=$modeLine"), ("time=" + (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'))) +
+$resultLines = @(("status=$status"), ("version=$Version"), ("profile=$Profile"), ("mode=$modeLine"), ("time=" + (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'))) +
                @($strOut | Where-Object { $_ -notlike 'STATUS*' })
 [IO.File]::WriteAllLines((Join-Path $LogDir 'result-latest.txt'), $resultLines, (New-Object System.Text.UTF8Encoding($false)))
 
@@ -255,7 +316,7 @@ if ($status -ne 'OK') {
 # ---- [6/6] 进入沙箱或收尾 ----
 if (-not $SkipShell) {
     Write-Host ''
-    Write-Host ('[6/6] 进入沙箱（Ubuntu {0} · root）—— 退出 shell 即自动销毁全部状态' -f $Version) -ForegroundColor Cyan
+    Write-Host ('[6/6] 进入沙箱（Ubuntu {0} · {1} · root）—— 退出 shell 即自动销毁全部状态' -f $Version, $Profile) -ForegroundColor Cyan
     if ($useIdentity) {
         Write-Host '      [身份模式] token 已注入：apt install git 后即可直接 clone 私有仓库（凭据随销毁消失）' -ForegroundColor DarkCyan
         Write-Host '      只在沙箱里跑你信任的代码——任何 guest 内程序都能读到这枚 token' -ForegroundColor DarkYellow

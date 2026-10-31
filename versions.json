@@ -1,6 +1,29 @@
 {
   "default": "24.04",
-  "mirror": "http://mirrors.cloud.tencent.com/ubuntu/",
+  "defaultProfile": "tencent",
+  "build": {
+    "mirror": "http://mirrors.cloud.tencent.com/ubuntu/"
+  },
+  "profiles": [
+    {
+      "id": "stock",
+      "name": "官方源（GCP/AWS/Azure 新机即官方源；海外用户默认）",
+      "mirror": "http://archive.ubuntu.com/ubuntu/",
+      "alignSources": false
+    },
+    {
+      "id": "tencent",
+      "name": "腾讯云新机基线（公网等价源）",
+      "mirror": "http://mirrors.cloud.tencent.com/ubuntu/",
+      "alignSources": true
+    },
+    {
+      "id": "aliyun",
+      "name": "阿里云新机基线（公网等价源）",
+      "mirror": "https://mirrors.aliyun.com/ubuntu/",
+      "alignSources": true
+    }
+  ],
   "versions": [
     {
       "id": "24.04",

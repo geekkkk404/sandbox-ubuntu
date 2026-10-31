@@ -1,11 +1,15 @@
-﻿# build-base.ps1 —— 按版本构建「腾讯云新VPS基线」母版（可重复运行，自带清理）
-# 流程: 读 versions.json → 下载官方 rootfs → SHA256 校验 → 导入构建实例 → guest-build.sh 对齐基线 → 导出母版(.tar+.sha256) → 销毁构建实例
+﻿# build-base.ps1 —— 按版本构建「全新 VPS 基线」母版（可重复运行，自带清理）
+# 母版始终保持出厂官方源（archive.ubuntu.com）；目标云的 apt 源对齐由沙箱启动期 setup.sh 按新机档案（profile）执行。
+# 构建期用 versions.json build.mirror 加速 apt（国内网络），仅作用于构建实例，不进母版。
+# 流程: 读 versions.json → 下载官方 rootfs → SHA256 校验 → 导入构建实例 → guest-build.sh 对齐基线（导出前还原出厂源） → 导出母版(.tar+.sha256) → 销毁构建实例
 # 参数: -Version 22.04|24.04|26.04   （缺省 = versions.json 的 default）
 #       -Force      不信任解压缓存（rootfs.tar），强制重建；下载缓存仅在 SHA256 校验通过时复用
+#       -Mirror url 构建期 apt 加速镜像覆盖（默认取 versions.json build.mirror；海外构建可指向官方源）
 param(
     [string]$Version,
     [switch]$Force,
-    [string]$ManifestPath
+    [string]$ManifestPath,
+    [string]$Mirror
 )
 $ErrorActionPreference = 'Continue'
 $Root = $PSScriptRoot
@@ -27,7 +31,13 @@ if ($ids -notcontains $Version) {
     exit 1
 }
 $Entry = @($Manifest.versions | Where-Object { $_.id -eq $Version })[0]
-$Mirror = $Manifest.mirror
+if (-not $Mirror) {
+    if (-not ($Manifest.PSObject.Properties.Name -contains 'build') -or -not $Manifest.build.mirror) {
+        Write-Host '[FAIL] versions.json 缺少 build.mirror（构建期 apt 加速镜像），或未传 -Mirror' -ForegroundColor Red
+        exit 1
+    }
+    $Mirror = $Manifest.build.mirror
+}
 $DlDir   = Join-Path $Root ('download\' + $Entry.id)
 $BaseDir = Join-Path $Root 'base'
 $LogDir  = Join-Path $Root 'logs'
@@ -148,7 +158,7 @@ if (Test-Path $BuildDir) { Remove-Item $BuildDir -Recurse -Force -ErrorAction Si
 $null = & wsl --import $Distro $BuildDir $importFile --version 2 2>&1
 if ($LASTEXITCODE -ne 0) { Die "wsl --import 失败 (exit=$LASTEXITCODE)" }
 
-Write-Host '=== [5/6] 基线构建（apt源/sshd/cloud-init/wsl.conf/cloud-init clean） ===' -ForegroundColor Cyan
+Write-Host '=== [5/6] 基线构建（构建期镜像加速/sshd/cloud-init/wsl.conf/cloud-init clean；导出前还原出厂官方源） ===' -ForegroundColor Cyan
 $gb = Get-Content -LiteralPath $BuildSh -Raw -Encoding UTF8
 $gb = $gb.Replace('@SB_VER@', $Entry.id).Replace('@SB_MIRROR@', $Mirror)
 $b64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($gb))
