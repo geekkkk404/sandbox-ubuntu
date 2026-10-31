@@ -1,0 +1,6 @@
+# （可选）GitHub 身份模式：把真实 fine-grained PAT 粘贴到下面这一行（整行只有 token 本身，不要引号、不要空格），
+# 然后把本文件改名为 token.txt。
+# 不需要 GitHub 身份？什么都不做——没有 token.txt 就是纯净模式，无任何凭据进入沙箱。
+# 建议：与宿主机其他用途的 token 分开创建；仅勾选需要的仓库；Contents 只读；有效期 7~30 天；用完可在 GitHub 直接删除。
+# 不要把 token.txt 提交到任何仓库（本目录 .gitignore 已排除）。
+github_pat_REPLACE_ME

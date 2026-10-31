@@ -1,0 +1,15 @@
+# 凭据：绝不入库
+token.txt
+
+# 本地开发过程记录（个人开发习惯，不入开源仓库；如想公开可删除此行）
+开发账单.md
+
+# 本地产物：母版 / 下载缓存 / 运行期 vhdx / 日志
+base/
+download/
+instance/
+logs/
+
+# Windows 杂物
+Thumbs.db
+Desktop.ini

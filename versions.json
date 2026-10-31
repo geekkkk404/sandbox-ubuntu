@@ -1,0 +1,41 @@
+{
+  "default": "24.04",
+  "mirror": "http://mirrors.cloud.tencent.com/ubuntu/",
+  "versions": [
+    {
+      "id": "24.04",
+      "name": "Ubuntu 24.04 LTS (Noble Numbat)",
+      "url": "https://releases.ubuntu.com/24.04.5/ubuntu-24.04.5-wsl-amd64.wsl",
+      "mirrors": [
+        "https://mirrors.tuna.tsinghua.edu.cn/ubuntu-releases/24.04.5/ubuntu-24.04.5-wsl-amd64.wsl",
+        "https://mirrors.ustc.edu.cn/ubuntu-releases/24.04.5/ubuntu-24.04.5-wsl-amd64.wsl"
+      ],
+      "sha256": "bb415d824822c4b878125729af451a5d18fb13d1cf5cbed9a7393ad64ac6039e",
+      "format": "wsl",
+      "sourceStyle": "deb822"
+    },
+    {
+      "id": "22.04",
+      "name": "Ubuntu 22.04 LTS (Jammy Jellyfish)",
+      "url": "https://cloud-images.ubuntu.com/wsl/releases/22.04/current/ubuntu-jammy-wsl-amd64-wsl.rootfs.tar.gz",
+      "mirrors": [
+        "https://mirrors.nju.edu.cn/ubuntu-cloud-images/wsl/releases/22.04/current/ubuntu-jammy-wsl-amd64-wsl.rootfs.tar.gz"
+      ],
+      "sha256": "de9f6149da07b90350a3ccd94b4858b82fef71f0ec2982acb93de583c4c87585",
+      "format": "tar.gz",
+      "sourceStyle": "legacy"
+    },
+    {
+      "id": "26.04",
+      "name": "Ubuntu 26.04 LTS (Resolute)",
+      "url": "https://releases.ubuntu.com/26.04/ubuntu-26.04.1-wsl-amd64.wsl",
+      "mirrors": [
+        "https://mirrors.tuna.tsinghua.edu.cn/ubuntu-releases/26.04/ubuntu-26.04.1-wsl-amd64.wsl",
+        "https://mirrors.ustc.edu.cn/ubuntu-releases/26.04/ubuntu-26.04.1-wsl-amd64.wsl"
+      ],
+      "sha256": "48d56724b5c8e60f24893e83e73bbb58c60b3ca22fba3da977075420acd54104",
+      "format": "wsl",
+      "sourceStyle": "deb822"
+    }
+  ]
+}
