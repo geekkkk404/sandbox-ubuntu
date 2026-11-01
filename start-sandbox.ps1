@@ -200,6 +200,17 @@ if (Get-Command wsl.exe -ErrorAction SilentlyContinue) {
     }
 }
 if (-not $wslOk) {
+    # Windows Sandbox 识别（ISSUE-007）：WSB 是宿主 Hyper-V 上的一次性 VM，不支持嵌套虚拟化，
+    # WSL2 在其中结构性不可运行——通用诊断的 hypervisor 推理在此会误导，直接给针对性结论。
+    # WDAGUtilityAccount 为 WSB 专用内置账户
+    if ($env:USERNAME -eq 'WDAGUtilityAccount') {
+        Write-Host '[FAIL] 检测到 Windows 沙箱（Windows Sandbox）—— WSL2 无法在沙箱内运行（不支持嵌套虚拟化），下面的修复指引在沙箱内不适用' -ForegroundColor Red
+        Write-Host '  处理：请在物理机或完整虚拟机中运行本项目（"干净系统首启"的合法载体）:' -ForegroundColor Yellow
+        Write-Host '    · Hyper-V VM：宿主管理员 PowerShell 执行 Set-VMProcessor -ExposeVirtualizationExtensions $true，装好系统后在其内 wsl --install'
+        Write-Host '    · VMware Workstation（个人免费）：VM 设置勾选 Virtualize Intel VT-x/EPT or AMD-V/RVI'
+        Write-Host '    · 云端 Windows VM：选支持嵌套虚拟化的规格（如 Azure Dv3/Ev3+）；VirtualBox 仅 AMD 主机支持嵌套'
+        PauseAtEnd; exit 1
+    }
     Write-Host '[FAIL] 未检测到可用的 WSL2 —— 诊断：' -ForegroundColor Red
     $build = [Environment]::OSVersion.Version.Build
     if ($build -lt 19041) {
@@ -212,6 +223,7 @@ if (-not $wslOk) {
     try { $hyper = [bool](Get-CimInstance Win32_ComputerSystem -ErrorAction Stop).HypervisorPresent } catch { }
     if ($hyper) {
         Write-Host '  · hypervisor 已运行 —— BIOS 虚拟化没问题，问题在 WSL 组件本身（未装 / 损坏 / 过旧）' -ForegroundColor Yellow
+        Write-Host '      （若你正处在虚拟机内，还需宿主为其开启嵌套虚拟化——见 README FAQ「能在 Windows 沙箱里运行吗」）'
     } else {
         Write-Host '  · hypervisor 未运行 —— 常见原因按概率排序（先装 WSL，装完重启仍失败再按 b/c 处理）:' -ForegroundColor Yellow
         Write-Host '      a. WSL 尚未安装 —— 此时 hypervisor 本就不会运行，属正常，先按下面指引安装'

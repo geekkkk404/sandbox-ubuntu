@@ -146,6 +146,9 @@ systemd/cloud-init 的"新机首启"语义 + 校验式销毁 + 云新机 apt 源
 **Q：支持 macOS / Linux 吗？**
 不支持。依赖 WSL2（Windows 独有组件），见「已知保真边界」。
 
+**Q：能在 Windows 沙箱（Windows Sandbox）里运行吗？**
+不能。WSL2 需要嵌套虚拟化，而 Windows Sandbox 不提供（启动脚本检测到沙箱后会直接说明，不会让你白忙）。想体验"干净系统首启"：物理机，或开启嵌套虚拟化的完整 VM——Hyper-V（宿主执行 `Set-VMProcessor -ExposeVirtualizationExtensions $true`）、VMware Workstation（VM 设置勾选 Virtualize Intel VT-x/EPT）、支持嵌套的云主机规格；VirtualBox 仅 AMD 主机可用。
+
 **Q：占多少磁盘？**
 母版每版本 ~1-2GB（缓存于 `base\`，可删可重建）；运行中实例 vhdx ~2GB，`exit` 后即释放。
 

@@ -146,6 +146,9 @@ Intra-VPC mirror domains (`mirrors.tencentyun.com` etc.) do not resolve outside 
 **Q: Does it support macOS / Linux?**
 No. It depends on WSL2, a Windows-only component — see "Known fidelity limits".
 
+**Q: Can I run it inside Windows Sandbox?**
+No. WSL2 needs nested virtualization, which Windows Sandbox does not provide (the launcher detects the sandbox and says so directly, instead of sending you down a dead end). To try the "clean machine first boot" experience, use a physical machine or a full VM with nested virtualization enabled: Hyper-V (`Set-VMProcessor -ExposeVirtualizationExtensions $true` on the host), VMware Workstation (enable "Virtualize Intel VT-x/EPT" in the VM settings), or a cloud VM size that supports nesting; VirtualBox offers nested virt on AMD hosts only.
+
 **Q: How much disk does it use?**
 ~1–2GB per built base image (cached in `base\`, deletable and rebuildable); ~2GB vhdx while an instance runs, released on `exit`.
 
