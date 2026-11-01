@@ -13,3 +13,12 @@ logs/
 # Windows 杂物
 Thumbs.db
 Desktop.ini
+
+# Gitee 跟随仓库：维护者私人发版脚本与令牌，绝不入库（quad-todo P-013 教训：第一天就收编）
+.gitee-token
+scripts/release.ps1
+scripts/发版-一键发布.bat
+
+# Python 杂物（scripts/ 下的 CI 脚本编译产物）
+__pycache__/
+*.pyc

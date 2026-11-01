@@ -1,0 +1,69 @@
+name: sync-and-release
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  workflow_dispatch:
+  schedule:
+    - cron: "47 20 * * 1" # UTC 每周一 20:47（北京时间周二 04:47）兜底补漏，避开整点拥塞
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sync-and-release
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # 完整历史与标签，镜像需要全部 refs
+
+      - name: Mirror push to Gitee
+        env:
+          TOKEN: ${{ secrets.GITEE_TOKEN }}
+        run: |
+          R="https://geekkkk404:${TOKEN}@gitee.com/geekkkk404/sandbox-ubuntu.git"
+          # 用 origin/main 引用而非本地分支名，保证 tag 触发（detached HEAD）时同样可用。
+          # 一次 git push main+tag 会同时触发 branch+tag 两个 run：并行镜像曾把 Gitee
+          # 授权服务打到 408（quad-todo P-015 实测），除 workflow 级串行化外再加重试兜底。
+          for i in 1 2 3 4; do
+            if git push --force "$R" "origin/main:refs/heads/main" \
+               && git push --force "$R" "+refs/tags/*:refs/tags/*"; then
+              exit 0
+            fi
+            echo "mirror push 第 $i 次失败，30 秒后重试…"
+            sleep 30
+          done
+          exit 1
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: sync
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Extract release notes from CHANGELOG
+        run: python scripts/release_notes.py "${{ github.ref_name }}" > RELEASE.md
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # create 失败（发行版已存在，如重跑）则退回 edit 覆盖说明
+          gh release create "${{ github.ref_name }}" \
+            --title "sandbox-ubuntu ${{ github.ref_name }}" \
+            --notes-file RELEASE.md \
+            || gh release edit "${{ github.ref_name }}" --notes-file RELEASE.md
+
+      - name: Create Gitee release with notes
+        env:
+          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
+        # 本项目零附件发行，只建发行版本体 + 说明；如未来需要附件，
+        # GitHub 机房直传 Gitee 大文件不可用（quad-todo P-009 实测），须本地网络补传。
+        run: python scripts/gitee_release.py "${{ github.ref_name }}" "" RELEASE.md
