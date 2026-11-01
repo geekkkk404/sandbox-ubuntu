@@ -2,7 +2,9 @@
 
 English | [简体中文](README.md)
 
-**A disposable "fresh Ubuntu cloud VPS" simulator on WSL2.** Double-click to enter a root shell on a brand-new Ubuntu LTS (systemd running, apt sources aligned per cloud "profile": Tencent Cloud / Aliyun / GCP·AWS·Azure stock), and the instance is verified-destroyed the moment you exit. Clean mode (no credentials) is the default; GitHub identity injection is strictly opt-in.
+**A disposable "fresh Ubuntu cloud VPS" simulator on WSL2 (Windows only).** Double-click to enter a root shell on a brand-new Ubuntu LTS (systemd running, apt sources aligned per cloud "profile": Tencent Cloud / Aliyun / GCP·AWS·Azure stock), and the instance is verified-destroyed the moment you exit. Clean mode (no credentials) is the default; GitHub identity injection is strictly opt-in.
+
+> **TL;DR**: double-click on Windows and get a "fresh Ubuntu cloud VPS" — systemd running, root login, apt sources aligned to a cloud vendor's fresh-machine mirror (stock / Tencent / Aliyun), verified teardown with zero leftovers on exit. Built for repeatedly testing install scripts and deployment docs on a brand-new machine. Unattended / AI-agent invocation: see "Programmatic / AI-agent usage" below.
 
 ## Use cases
 
@@ -38,7 +40,7 @@ There is exactly one base image per Ubuntu release, kept at **stock sources**. A
 
 ## Quick start
 
-1. Prerequisite: Windows 10 (19041+) / 11 with WSL2 installed (`wsl --install`; Windows Home works, no third-party virtualization needed).
+1. Prerequisite: Windows only — Windows 10 (19041+) / 11 with WSL2 installed (`wsl --install`; Windows Home works, no third-party virtualization needed). If WSL is missing, the launcher prints a precise diagnosis (component missing / BIOS virtualization off / hypervisor disabled) with step-by-step fix guidance. macOS / Linux hosts have no WSL and are not supported.
 2. Download this project (ZIP or `git clone`).
 3. Double-click `start-sandbox.cmd`, pick a version and a machine profile. On first use it offers to download the official rootfs and build the base image (a few minutes, cached afterwards).
 4. You are in a root shell. Do your thing.
@@ -61,6 +63,25 @@ build-base.ps1 -Mirror <url>             # override the build-time apt mirror (d
 cleanup.cmd                              # verified cleanup for leftovers
 ```
 
+## Programmatic / AI-agent usage
+
+Designed to be callable unattended: no interaction, machine-readable results, deterministic exit codes. Recommended agent invocation:
+
+```
+start-sandbox.cmd -SkipShell -Version 22.04 -Profile stock -NoIdentity -Force
+```
+
+- `-SkipShell`: no interactive shell; runs build → import → init & verify → verified cleanup, then exits. Builds a missing base image automatically — safe unattended.
+- `-NoIdentity`: force clean mode even if token.txt exists — the recommended posture before running semi-trusted code.
+- `-Force`: on verification failure, clean up and exit without asking.
+- Every call is a brand-new machine: stateless and repeatable; read back the exit code and `logs\result-latest.txt`.
+
+**Reading the result (machine-readable):**
+
+- **Exit code**: `0` = verification passed and zero-leftover cleanup confirmed; `1` = any step failed (environment check / build / import / verify / cleanup).
+- **`logs\result-latest.txt`**: starts with machine-readable key=value lines — `status=OK|FAIL`, `version=`, `profile=`, `mode=pure|identity`, `time=`; then one `PASS|FAIL<TAB>check<TAB>detail` line per check.
+- **Logs**: `logs\setup-<version>-<time>.txt` (init & verify), `logs\build-<version>-<time>.txt` (base build); never contain the token.
+
 ## Fidelity baseline (what is baked into the base image)
 
 - **apt sources**: the base image keeps **stock official sources** (`archive.ubuntu.com` / `security.ubuntu.com`, deb822 `ubuntu.sources` on 24.04/26.04, classic `sources.list` on 22.04). Cloud-source alignment happens at every sandbox start, per machine profile (see above), inside the running instance only.
@@ -72,6 +93,7 @@ cleanup.cmd                              # verified cleanup for leftovers
 
 ### Known fidelity limits (stated honestly)
 
+- Host platform: Windows only (WSL2); macOS / Linux hosts lack WSL and are not supported.
 - Kernel: WSL's custom kernel ≠ cloud vendor kernels (`linux-aws`, `linux-gcp`, …); kernel/DKMS-level drills can't be reproduced.
 - Vendor-private agents: Aliyun Assistant / SSM Agent / monitoring plugins are not simulated — they don't change a fresh machine's apt/baseline behavior; a deliberate boundary, not an omission.
 - cloud-init: the datasource is WSL, not a cloud vendor; first-boot runs but instance metadata differs.
@@ -103,6 +125,37 @@ The git-handshake check: the sandbox has no git by design, so setup sends the ex
 | fresh-every-time + teardown guarantee | verified | by construction | remember --purge | revert snapshot | remember to destroy |
 | cloud mirror alignment | ✔ (per machine profile: Tencent / Aliyun / stock) | ✘ | ✘ (stock sources) | ✘ | ✔ |
 | startup cost after first use | 30–60 s | ~10 s | ~1 min | ~2 min | 5–10 min |
+
+## FAQ
+
+**Q: Can I run semi-trusted code in it?**
+Clean mode (the default) gives you a fresh environment, not an adversarial sandbox — WSL2 is not a security boundary. Keep clean mode for untrusted code; in identity mode, root inside the guest can read the token. See [threat-model](docs/threat-model.md).
+
+**Q: How is this different from `docker run --rm`?**
+The "fresh machine first boot" semantics (systemd + cloud-init), verified teardown, and per-cloud apt-source alignment. In a container systemd is not PID1, so drills that install services (systemctl enable/start) go unrealistic — and that is one of this project's main use cases.
+
+**Q: Why is git missing? My server has it.**
+The baseline is a fresh-VPS factory state: git/pip/gcc are deliberately not baked in. `apt install git` is part of the simulation — it proves your deployment flow works on a new machine.
+
+**Q: Is the data really gone after exit? Can it be recovered?**
+Gone, and unrecoverable — that is the point. Teardown is verified (unregister → delete vhdx → re-check); push out anything you want to keep before typing `exit`.
+
+**Q: Why public mirrors instead of the cloud's intra-VPC domain?**
+Intra-VPC mirror domains (`mirrors.tencentyun.com` etc.) do not resolve outside the cloud; copying them verbatim would create an obstacle real cloud users never hit. The public equivalent is the testable form of the same fidelity.
+
+**Q: Does it support macOS / Linux?**
+No. It depends on WSL2, a Windows-only component — see "Known fidelity limits".
+
+**Q: How much disk does it use?**
+~1–2GB per built base image (cached in `base\`, deletable and rebuildable); ~2GB vhdx while an instance runs, released on `exit`.
+
+**Q: Does the token end up in logs?**
+No. The token enters the sandbox through the WSLENV in-memory bridge and is never printed; credentials exist only at `/root/.git-credentials` inside the instance and die with it.
+
+## Maintainer
+
+- Author / maintainer: [geekkkk404](https://github.com/geekkkk404)
+- Born from a real pain: reinstalling a system or renting a VPS just to test an install script. Known limits are documented honestly (see "Known fidelity limits") — no overpromising. Please open an issue for feedback.
 
 ## License
 

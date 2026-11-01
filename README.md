@@ -2,7 +2,9 @@
 
 [English](README.en.md) | 简体中文
 
-**WSL2 上的一次性全新 Ubuntu 云机模拟器。** 双击进入一台 root 直进、systemd 运行中、apt 源按「新机档案」对齐（腾讯云 / 阿里云 / GCP·AWS·Azure 官方源）的"全新 Ubuntu LTS"，退出 shell 即校验式销毁，零残留。可选注入 GitHub 身份（默认纯净模式，无任何凭据进入沙箱）。
+**WSL2 上的一次性全新 Ubuntu 云机模拟器（Windows 专用）。** 双击进入一台 root 直进、systemd 运行中、apt 源按「新机档案」对齐（腾讯云 / 阿里云 / GCP·AWS·Azure 官方源）的"全新 Ubuntu LTS"，退出 shell 即校验式销毁，零残留。可选注入 GitHub 身份（默认纯净模式，无任何凭据进入沙箱）。
+
+> **一句话**：在 Windows 上双击，得到一台"全新 Ubuntu 云机"——systemd 运行、root 直进、apt 源按云厂商新机对齐（stock / 腾讯云 / 阿里云），退出即校验式销毁、零残留。为"反复在新机上验证安装脚本 / 部署文档"而生；自动化与 AI agent 无人值守调用见下文「自动化 / AI agent 调用」。
 
 ## 适用场景
 
@@ -38,7 +40,7 @@
 
 ## 快速开始
 
-0. 前置：Windows 10 (19041+) / 11，已装 WSL2（`wsl --install`，家庭版可用，无需第三方虚拟化软件）。
+0. 前置：仅支持 Windows——Windows 10 (19041+) / 11，已装 WSL2（`wsl --install`，家庭版可用，无需第三方虚拟化软件）；未装 WSL 时，双击启动脚本会打印精确诊断（组件缺失 / BIOS 虚拟化未开 / hypervisor 被关）与分步修复指引。macOS / Linux 宿主无 WSL，不支持。
 1. 下载本项目（ZIP 解压或 git clone）。
 2. 双击 `start-sandbox.cmd` → 菜单选版本与新机档案 → 首次选中未构建的版本会询问是否联网构建母版（几分钟，之后有缓存）。
 3. 进入 root shell，开始使用。
@@ -61,6 +63,25 @@ build-base.ps1 -Mirror <url>             # 海外构建时可覆盖构建期加�
 cleanup.cmd                              # 异常残留兜底（校验式清理 + 如实报告）
 ```
 
+## 自动化 / AI agent 调用（Programmatic / AI-agent usage）
+
+设计为可无人值守调用：无交互、机器可读结果、确定性退出码。推荐给 agent 的调用形态：
+
+```
+start-sandbox.cmd -SkipShell -Version 22.04 -Profile stock -NoIdentity -Force
+```
+
+- `-SkipShell`：不开交互 shell，依次完成 构建→导入→初始化验证→校验式清理 后退出；母版缺失时自动构建，无人值守安全。
+- `-NoIdentity`：强制纯净模式（即使 token.txt 存在）——agent 跑不完全信任代码前的推荐姿势。
+- `-Force`：验证失败不询问，直接清理退出。
+- 每次调用都是一台全新机器：无状态、可重复；结果只看退出码与 `logs\result-latest.txt`。
+
+**结果判定（机器可读）：**
+
+- **退出码**：`0` = 初始化验证通过且已确认零残留清理；`1` = 任一环节失败（环境检查 / 构建 / 导入 / 验证 / 清理）。
+- **`logs\result-latest.txt`**：首部为机器可读键值行——`status=OK|FAIL`、`version=`、`profile=`、`mode=pure|identity`、`time=`；其后逐行 `PASS|FAIL<TAB>检查项<TAB>详情`。
+- **日志**：`logs\setup-<版本>-<时间>.txt`（初始化验证）、`logs\build-<版本>-<时间>.txt`（母版构建）；均绝不包含 token。
+
 ## 保真基线（母版烤入了什么）
 
 - **apt 源**：母版保持**出厂官方源**（`archive.ubuntu.com` / `security.ubuntu.com`，格式随版本：24.04/26.04 为 deb822 `ubuntu.sources`，22.04 为传统 `sources.list`）。目标云的源对齐发生在每次沙箱启动时（按新机档案，见上），只作用于本次实例。
@@ -72,6 +93,7 @@ cleanup.cmd                              # 异常残留兜底（校验式清理 
 
 ### 已知保真边界（如实告知）
 
+- 宿主平台：仅 Windows（依赖 WSL2）；macOS / Linux 宿主无 WSL，不支持。
 - 内核：WSL 定制内核 ≠ 云厂商内核（AWS `linux-aws`、GCP `linux-gcp` 等），内核参数/驱动/DKMS 类演练无法复现。
 - 云厂商私有 agent：阿里云助手 / SSM Agent / 云监控插件等不模拟——它们不改变新机的 apt/基线行为，属刻意边界而非遗漏。
 - cloud-init：datasource 是 WSL 而非云厂商，首启流程会跑但实例元数据与云上不同。
@@ -104,6 +126,32 @@ git 握手验证的原理：沙箱内没有 git（基线要求），setup 用 py
 | 云镜像源对齐 | ✔（按新机档案：腾讯云/阿里云/官方） | ✘ | ✘（官方源） | ✘ | ✔ |
 | 后续每次启动 | 30–60 秒 | ~10 秒 | ~1 分钟 | ~2 分钟 | 5–10 分钟 |
 
+## FAQ
+
+**Q：可以跑不完全信任的代码吗？**
+纯净模式（默认）给的是"干净环境"，不是对抗性沙箱——WSL2 不是安全边界。跑不可信代码保持纯净模式；身份模式下 guest 内 root 能读走 token，详见 [threat-model](docs/threat-model.md)。
+
+**Q：和 `docker run --rm` 的本质区别？**
+systemd/cloud-init 的"新机首启"语义 + 校验式销毁 + 云新机 apt 源对齐。容器里 systemd 不是 PID1，装服务类软件（systemctl enable/start）的演练会失真——而这恰是本项目的主场景之一。
+
+**Q：为什么沙箱里没有 git？我服务器上有。**
+基线 = 全新 VPS 出厂状态，git/pip/gcc 一律不烤。`apt install git` 本身就是模拟的一部分——它验证你的部署流程在新机上走得通。
+
+**Q：退出后数据真的没了？能恢复吗？**
+没了，也不能恢复——这是特性。销毁是校验式的（unregister → 删 vhdx → 复查注册表与磁盘），要保留的产物先 push 出去再 `exit`。
+
+**Q：为什么 apt 源是公网镜像而不是云内网域名？**
+云内网域名（`mirrors.tencentyun.com` 等）在你的机器上不可达，照抄会制造真实云用户遇不到的假障碍；公网等价源才是可测的保真。
+
+**Q：支持 macOS / Linux 吗？**
+不支持。依赖 WSL2（Windows 独有组件），见「已知保真边界」。
+
+**Q：占多少磁盘？**
+母版每版本 ~1-2GB（缓存于 `base\`，可删可重建）；运行中实例 vhdx ~2GB，`exit` 后即释放。
+
+**Q：token 会进日志吗？**
+不会。token 经 WSLENV 内存桥进入沙箱，任何日志不打印；凭据只落在实例内 `/root/.git-credentials`，随销毁消失。
+
 ## 目录结构
 
 | 文件 | 作用 |
@@ -125,6 +173,11 @@ git 握手验证的原理：沙箱内没有 git（基线要求），setup 用 py
 - **（身份模式）[FAIL] git 握手 404/401**：fine-grained token 没勾该仓库或 Contents 权限不足。
 - **母版 SHA256 不匹配**：`build-base.ps1 -Version <id> -Force` 重建。
 - 日志：`logs\setup-<版本>-<时间>.txt`、`logs\result-latest.txt`（含 `profile=` 行）、`logs\build-<版本>-<时间>.txt`（绝不含 token）。
+
+## 维护者
+
+- 作者 / 维护者：[geekkkk404](https://github.com/geekkkk404)
+- 本项目源于"每次测安装脚本都要重装系统或租真机"的真实痛点；已知边界一律如实写进文档（见「已知保真边界」），不做无法兑现的承诺。问题反馈请开 Issue。
 
 ## License
 

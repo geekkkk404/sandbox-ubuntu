@@ -183,10 +183,49 @@ if ($ListVersions) {
 
 Write-Host '=== sandbox-ubuntu · 一次性全新 Ubuntu 云机模拟器 ===' -ForegroundColor Cyan
 
-# ---- [1/6] 环境检查 ----
-$null = & wsl --version 2>&1
-if ($LASTEXITCODE -ne 0) {
-    Write-Host '[FAIL] 未检测到可用 WSL。请先在管理员 PowerShell 运行: wsl --install，然后重启电脑' -ForegroundColor Red
+# ---- [1/6] 环境检查：WSL 可用性诊断（可用 / 组件缺失 / 虚拟化层未运行，各给针对性指引） ----
+# 引导优先（ISSUE-006 P1）：把"缺什么"诊断出来并给可复制命令；自动安装（P2）明确不做，防止无人值守被 UAC 卡死
+$wslOk = $false
+if (Get-Command wsl.exe -ErrorAction SilentlyContinue) {
+    $null = & wsl.exe --version 2>&1
+    if ($LASTEXITCODE -eq 0) {
+        $wslOk = $true
+    } else {
+        # Win10 老版内置 WSL 不支持 --version（--status 可用即视为可用，另提示升级）
+        $null = & wsl.exe --status 2>&1
+        if ($LASTEXITCODE -eq 0) {
+            $wslOk = $true
+            Write-Host '[info] 检测到较旧版本 WSL（无 --version 支持），仍可运行；建议在管理员 PowerShell 执行 wsl --update 升级' -ForegroundColor DarkCyan
+        }
+    }
+}
+if (-not $wslOk) {
+    Write-Host '[FAIL] 未检测到可用的 WSL2 —— 诊断：' -ForegroundColor Red
+    $build = [Environment]::OSVersion.Version.Build
+    if ($build -lt 19041) {
+        Write-Host ("  · Windows build {0} 低于 19041 —— 本项目要求 Win10 19041+ / Win11，请先完成 Windows 更新" -f $build) -ForegroundColor Yellow
+    }
+    if (-not (Get-Command wsl.exe -ErrorAction SilentlyContinue)) {
+        Write-Host '  · wsl.exe 不存在 —— WSL 组件未安装（多数干净 Win10/11 的默认状态）' -ForegroundColor Yellow
+    }
+    $hyper = $false
+    try { $hyper = [bool](Get-CimInstance Win32_ComputerSystem -ErrorAction Stop).HypervisorPresent } catch { }
+    if ($hyper) {
+        Write-Host '  · hypervisor 已运行 —— BIOS 虚拟化没问题，问题在 WSL 组件本身（未装 / 损坏 / 过旧）' -ForegroundColor Yellow
+    } else {
+        Write-Host '  · hypervisor 未运行 —— 常见原因按概率排序（先装 WSL，装完重启仍失败再按 b/c 处理）:' -ForegroundColor Yellow
+        Write-Host '      a. WSL 尚未安装 —— 此时 hypervisor 本就不会运行，属正常，先按下面指引安装'
+        Write-Host '      b. BIOS 未开虚拟化 —— 进 BIOS/UEFI 开启 Intel VT-x / AMD-V (SVM)'
+        Write-Host '      c. hypervisor 启动被关（曾为 VirtualBox/游戏反作弊关闭）—— 管理员 PowerShell 执行: bcdedit /set hypervisorlaunchtype auto，然后重启'
+    }
+    Write-Host ''
+    Write-Host '  修复指引:' -ForegroundColor Cyan
+    Write-Host '    1. 开始菜单右键 → 「终端(管理员)」或「Windows PowerShell(管理员)」'
+    Write-Host '    2. 执行:  wsl --install --no-distribution    （免装默认 Ubuntu——本项目用不上它）'
+    Write-Host '       若提示不识别参数，改执行:  wsl --install    （会额外装一个默认 Ubuntu，可忽略）'
+    Write-Host '    3. 重启电脑'
+    Write-Host '    4. 重新双击 start-sandbox.cmd'
+    Write-Host '    注: 安装需联网下载微软官方组件；企业策略可能禁用虚拟化（需联系 IT）。装完 wsl 仍不可用时先试: wsl --update' -ForegroundColor DarkGray
     PauseAtEnd; exit 1
 }
 
