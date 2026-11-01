@@ -3,6 +3,13 @@
 All notable changes to this project are documented in this file.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning follows SemVer.
 
+## [0.2.0] - 2026-11-01
+
+### Added
+
+- Gitee mirror: a CI workflow force-mirrors `main` and all tags to [gitee.com/geekkkk404/sandbox-ubuntu](https://gitee.com/geekkkk404/sandbox-ubuntu) on every push — serialized with retries, plus a weekly cron as a drift fallback. / Gitee 跟随仓库：CI 在每次推送时把 `main` 与全部 tag force 镜像到 Gitee——串行化 + 重试，另有每周 cron 兜底补漏。
+- Automated dual-platform releases: pushing a `v*` tag now builds both the GitHub Release and the Gitee release from the matching CHANGELOG section (new in-repo helpers `scripts/release_notes.py` and `scripts/gitee_release.py`). / 自动化双端发版：推送 `v*` 标签即由 CI 从 CHANGELOG 对应版本段生成 GitHub Release 与 Gitee 发行版（新增入库辅助脚本 `scripts/release_notes.py` 与 `scripts/gitee_release.py`）。
+
 ## [0.1.0] - 2026-11-01
 
 Initial public release / 首个公开版本。
