@@ -57,6 +57,7 @@ start-sandbox.cmd -Profile stock         # pick the machine profile (stock/tence
 start-sandbox.cmd -SkipShell             # build/import/verify/cleanup only (for automation)
 start-sandbox.cmd -NoIdentity            # force clean mode even if token.txt exists
 start-sandbox.cmd -Force                 # on verification failure: clean up without asking
+start-sandbox.cmd -Lang en               # force the UI language (zh/en; default auto-detects the Windows display language; the SB_LANG env var works too)
 start-sandbox.cmd -ListVersions          # print the support matrix (versions × profiles)
 build-base.ps1 -Version 22.04 -Force     # rebuild a base image
 build-base.ps1 -Mirror <url>             # override the build-time apt mirror (default: Tencent Cloud)
@@ -74,12 +75,13 @@ start-sandbox.cmd -SkipShell -Version 22.04 -Profile stock -NoIdentity -Force
 - `-SkipShell`: no interactive shell; runs build → import → init & verify → verified cleanup, then exits. Builds a missing base image automatically — safe unattended.
 - `-NoIdentity`: force clean mode even if token.txt exists — the recommended posture before running semi-trusted code.
 - `-Force`: on verification failure, clean up and exit without asking.
+- `-Lang zh|en`: pin the UI language (default: auto-detects the Windows display language) — agents/CI can pin it for deterministic logs.
 - Every call is a brand-new machine: stateless and repeatable; read back the exit code and `logs\result-latest.txt`.
 
 **Reading the result (machine-readable):**
 
 - **Exit code**: `0` = verification passed and zero-leftover cleanup confirmed; `1` = any step failed (environment check / build / import / verify / cleanup).
-- **`logs\result-latest.txt`**: starts with machine-readable key=value lines — `status=OK|FAIL`, `version=`, `profile=`, `mode=pure|identity`, `time=`; then one `PASS|FAIL<TAB>check<TAB>detail` line per check.
+- **`logs\result-latest.txt`**: starts with machine-readable key=value lines — `status=OK|FAIL`, `version=`, `profile=`, `mode=pure|identity`, `time=`; then one `PASS|FAIL<TAB>check<TAB>detail` line per check (check keys are stable English identifiers: identity / systemd / git-baseline / isolation-drives / isolation-interop / profile / mirror / apt-sources / source-align / apt-mirror / token / token-format / credential-inject / python3 / github-network / github-identity / git-handshake — they do not drift with the UI language).
 - **Logs**: `logs\setup-<version>-<time>.txt` (init & verify), `logs\build-<version>-<time>.txt` (base build); never contain the token.
 
 ## Fidelity baseline (what is baked into the base image)
@@ -148,6 +150,9 @@ No. It depends on WSL2, a Windows-only component — see "Known fidelity limits"
 
 **Q: Can I run it inside Windows Sandbox?**
 No. WSL2 needs nested virtualization, which Windows Sandbox does not provide (the launcher detects the sandbox and says so directly, instead of sending you down a dead end). To try the "clean machine first boot" experience, use a physical machine or a full VM with nested virtualization enabled: Hyper-V (`Set-VMProcessor -ExposeVirtualizationExtensions $true` on the host), VMware Workstation (enable "Virtualize Intel VT-x/EPT" in the VM settings), or a cloud VM size that supports nesting; VirtualBox offers nested virt on AMD hosts only.
+
+**Q: What language does the UI use on a non-Chinese Windows?**
+It follows the Windows display language automatically: Chinese systems get Chinese guidance, everything else gets English (force with `-Lang zh|en` or the `SB_LANG` environment variable). The log protocol stays in stable English keys (PASS/FAIL, check names) regardless of the UI language.
 
 **Q: How much disk does it use?**
 ~1–2GB per built base image (cached in `base\`, deletable and rebuildable); ~2GB vhdx while an instance runs, released on `exit`.

@@ -8,18 +8,21 @@
     {
       "id": "stock",
       "name": "官方源（GCP/AWS/Azure 新机即官方源；海外用户默认）",
+      "nameEn": "Stock official sources (GCP/AWS/Azure fresh machines; default for non-CN users)",
       "mirror": "http://archive.ubuntu.com/ubuntu/",
       "alignSources": false
     },
     {
       "id": "tencent",
       "name": "腾讯云新机基线（公网等价源）",
+      "nameEn": "Tencent Cloud fresh-machine baseline (public-equivalent mirror)",
       "mirror": "http://mirrors.cloud.tencent.com/ubuntu/",
       "alignSources": true
     },
     {
       "id": "aliyun",
       "name": "阿里云新机基线（公网等价源）",
+      "nameEn": "Alibaba Cloud fresh-machine baseline (public-equivalent mirror)",
       "mirror": "https://mirrors.aliyun.com/ubuntu/",
       "alignSources": true
     }

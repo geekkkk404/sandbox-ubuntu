@@ -57,6 +57,7 @@ start-sandbox.cmd -Profile stock         # 指定新机档案（stock/tencent/al
 start-sandbox.cmd -SkipShell             # 只做 构建/导入/验证/清理（自动化验证）
 start-sandbox.cmd -NoIdentity            # 即使 token.txt 存在也强制纯净模式
 start-sandbox.cmd -Force                 # 验证失败不询问，直接清理退出
+start-sandbox.cmd -Lang en               # 强制界面语言（zh/en；缺省按 Windows 显示语言自动检测，环境变量 SB_LANG 同效）
 start-sandbox.cmd -ListVersions          # 打印支持矩阵（版本 × 新机档案）
 build-base.ps1 -Version 22.04 -Force     # 手动重建某版本母版（下载缓存一并作废需重下）
 build-base.ps1 -Mirror <url>             # 海外构建时可覆盖构建期加速镜像（默认腾讯云源）
@@ -74,12 +75,13 @@ start-sandbox.cmd -SkipShell -Version 22.04 -Profile stock -NoIdentity -Force
 - `-SkipShell`：不开交互 shell，依次完成 构建→导入→初始化验证→校验式清理 后退出；母版缺失时自动构建，无人值守安全。
 - `-NoIdentity`：强制纯净模式（即使 token.txt 存在）——agent 跑不完全信任代码前的推荐姿势。
 - `-Force`：验证失败不询问，直接清理退出。
+- `-Lang zh|en`：固定界面语言（缺省按 Windows 显示语言自动检测）——agent/CI 可固化输出语言，获得确定性日志。
 - 每次调用都是一台全新机器：无状态、可重复；结果只看退出码与 `logs\result-latest.txt`。
 
 **结果判定（机器可读）：**
 
 - **退出码**：`0` = 初始化验证通过且已确认零残留清理；`1` = 任一环节失败（环境检查 / 构建 / 导入 / 验证 / 清理）。
-- **`logs\result-latest.txt`**：首部为机器可读键值行——`status=OK|FAIL`、`version=`、`profile=`、`mode=pure|identity`、`time=`；其后逐行 `PASS|FAIL<TAB>检查项<TAB>详情`。
+- **`logs\result-latest.txt`**：首部为机器可读键值行——`status=OK|FAIL`、`version=`、`profile=`、`mode=pure|identity`、`time=`；其后逐行 `PASS|FAIL<TAB>检查项<TAB>详情`（检查项为英文稳定键：identity / systemd / git-baseline / isolation-drives / isolation-interop / profile / mirror / apt-sources / source-align / apt-mirror / token / token-format / credential-inject / python3 / github-network / github-identity / git-handshake——不随界面语言漂移）。
 - **日志**：`logs\setup-<版本>-<时间>.txt`（初始化验证）、`logs\build-<版本>-<时间>.txt`（母版构建）；均绝不包含 token。
 
 ## 保真基线（母版烤入了什么）
@@ -148,6 +150,9 @@ systemd/cloud-init 的"新机首启"语义 + 校验式销毁 + 云新机 apt 源
 
 **Q：能在 Windows 沙箱（Windows Sandbox）里运行吗？**
 不能。WSL2 需要嵌套虚拟化，而 Windows Sandbox 不提供（启动脚本检测到沙箱后会直接说明，不会让你白忙）。想体验"干净系统首启"：物理机，或开启嵌套虚拟化的完整 VM——Hyper-V（宿主执行 `Set-VMProcessor -ExposeVirtualizationExtensions $true`）、VMware Workstation（VM 设置勾选 Virtualize Intel VT-x/EPT）、支持嵌套的云主机规格；VirtualBox 仅 AMD 主机可用。
+
+**Q：非中文 Windows 上看到什么语言？**
+界面自动跟随 Windows 显示语言：中文系统出中文引导，其余出英文（可用 `-Lang zh|en` 或环境变量 `SB_LANG` 强制）。日志协议恒为英文稳定键（PASS/FAIL、检查项名），不随语言漂移。
 
 **Q：占多少磁盘？**
 母版每版本 ~1-2GB（缓存于 `base\`，可删可重建）；运行中实例 vhdx ~2GB，`exit` 后即释放。
